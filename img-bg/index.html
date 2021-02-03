@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>canvas 操作图像：自适应+提取背景色+灰度处理</title>
+  <style> 
+    html, body {
+      height: 100%;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      padding: 3% 5%;
+      box-sizing: border-box;
+    }
+    .container canvas {
+      flex: 1;
+      width: 0;
+      height: 100%;
+    }
+
+    .container .aside {
+      padding: 20px;
+      background-color: aliceblue;
+    }
+    .container .aside input[type="file"] {
+      display: block;
+    }
+    .container .aside button {
+      margin-top: 10px;
+      padding: 3px 5px;
+      cursor: pointer;
+    }
+    .container .aside input[type="file"] {
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <canvas id="canvas"></canvas>
+  
+    <div class="aside">
+      <input type="file" onchange="updateImg(event)" accept="image/jpeg"/>
+      <button onclick="render('svg')">单色背景</button>
+      <button onclick="render('count')">双色背景</button>
+      </br>
+      <button id="gray" onclick="imgGray()">图片至灰</button>
+      <button id="reset" onclick="reset()" disabled>重置</button>
+    </div>
+  </div>
+  
+ 
+  <script type="text/javascript">
+    const global = {offset: 20};
+    const doms = {
+      gray: document.getElementById('gray'),
+      reset: document.getElementById('reset')
+    };
+
+    function updateImg (e) {
+      if (doms.gray.hasAttribute('disabled')) btnToggleAttribute();
+
+      const file = e.target.files[0];
+      const url = URL.createObjectURL(file);
+      main(url)
+    }
+    
+    function main (imgUrl) {
+      const canvas = document.getElementById('canvas')
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      const ctx = canvas.getContext('2d');
+
+      global.catchColor = null;
+      drawImg2canvas(canvas, ctx, imgUrl)
+    }
+
+    main('./cat.jpeg')
+
+    // 图片自适应，水平垂直居中
+    function drawImg2canvas (canvas, ctx, imgUrl = '') {
+      const cW = canvas.width;
+      const cH = canvas.height;
+
+      const imgObj = new Image();
+      imgObj.src = imgUrl;
+      imgObj.crossOrigin = 'Anonymous';
+      imgObj.onload = () => {
+        const imgW = imgObj.width;
+        const imgH = imgObj.height;
+        const {x, y, width, height} = calculate(cW, cH, imgW, imgH);
+
+        global.canvas = canvas
+        global.ctx = ctx
+        global.imgObj = imgObj
+        global.drawImgX = x
+        global.drawImgY = y
+        global.drawImgW = width
+        global.drawImgH = height
+
+        render('count')
+
+      }
+      // url 不是图片，或图片加载失败
+      imgObj.onerror = () => {
+        alert('图片url错误')
+      }
+    }
+
+    function btnToggleAttribute () {
+      doms.gray.toggleAttribute('disabled');
+      doms.reset.toggleAttribute('disabled');
+    }
+
+    function imgGray () {
+      const {canvas, imgObj, ctx, drawImgW, drawImgH, drawImgX, drawImgY, offset} = global;
+      let imgData = ctx.getImageData(drawImgX + offset / 2, drawImgY + offset / 2, drawImgW - offset, drawImgH - offset)
+      global.imgData = imgData;
+
+      let copyImgData = new ImageData(new Uint8ClampedArray([...imgData.data]), imgData.width, imgData.height)
+
+      for (let i=0; i<copyImgData.data.length; i+=4) {
+        const R = copyImgData.data[i];
+        const G = copyImgData.data[i+1];
+        const B = copyImgData.data[i+2];
+        const gray = getGrayColor(R, G, B)
+        copyImgData.data[i] = gray;
+        copyImgData.data[i+1] = gray;
+        copyImgData.data[i+2] = gray;
+      }
+
+      ctx.putImageData(copyImgData,drawImgX + offset / 2, drawImgY + offset / 2);
+
+      btnToggleAttribute();
+    }
+
+    function reset () {
+      const {canvas, imgObj, ctx, drawImgW, drawImgH, drawImgX, drawImgY, imgData, offset} = global;
+      ctx.putImageData(imgData, drawImgX + offset / 2, drawImgY + offset / 2);
+
+      btnToggleAttribute();
+    }
+
+    function render (type) {
+      global.type = type
+      const {canvas, imgObj, ctx, drawImgW, drawImgH, drawImgX, drawImgY, offset} = global;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      renderBg(type);
+
+      ctx.drawImage(imgObj, drawImgX + offset / 2, drawImgY + offset / 2, drawImgW - offset, drawImgH - offset);
+    }
+
+    function renderBg (type) {
+      const {canvas, ctx, imgObj, catchColor}= global;
+
+      const {bgColor, txtColor} = catchColor && catchColor[type] ? catchColor[type] : extractBgColor(imgObj, type);
+      global.catchColor = global.catchColor ? {...global.catchColor, [type]: {bgColor, txtColor}} : {[type]: {bgColor, txtColor}}
+
+      let color = bgColor;
+      if (Array.isArray(bgColor)) {
+        color = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+
+        // 线性渐变
+        color.addColorStop(0, bgColor[0]);
+        color.addColorStop(0.75, bgColor[1]);
+      }
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 计算图片居中绘制到画布上时 的宽高及起点坐标位置
+    function calculate(canvasWidth, canvasHeight, imgWidth, imgHeight) {
+      let x = 0;
+      let y = 0;
+
+      const canvasWHRadio = canvasWidth / canvasHeight
+      const imgWHRadio = imgWidth / imgHeight
+      
+      if (imgWidth < canvasWidth && imgHeight < canvasHeight) {
+        x = (canvasWidth - imgWidth) * 0.5
+        y = (canvasHeight - imgHeight) * 0.5
+      } else if (imgWHRadio > canvasWHRadio) {
+        imgHeight = canvasWidth / imgWHRadio
+        imgWidth = canvasWidth
+        y = (canvasHeight - imgHeight) * 0.5
+      } else {
+        imgWidth = canvasHeight * imgWHRadio
+        imgHeight = canvasHeight
+        x = (canvasWidth - imgWidth) * 0.5
+      }
+
+      return {
+        x,
+        y,
+        width: imgWidth,
+        height: imgHeight
+      }
+    }
+
+    function extractBgColor (imgObj, type) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const sizes = {
+        width: imgObj.width * 0.1,
+        height: imgObj.height * 0.1
+      }
+
+      canvas.width = sizes.width;
+      canvas.height = sizes.height;
+
+      ctx.drawImage(imgObj, 0, 0, sizes.width, sizes.height);
+
+      const imgData = ctx.getImageData(0, 0, sizes.width, sizes.height);
+
+      const perChunkSize = 4;
+      const imgRgbaData = Array.from(imgData.data).reduce((rgba, item, index) => {
+          const subIndex = Math.floor(index / perChunkSize);
+          if (!rgba[subIndex]) {
+              rgba[subIndex] = []
+          }
+          rgba[subIndex].push(item)
+          return rgba;
+      }, [])
+
+      const color = type === 'count' ? get2ColorByCount(imgRgbaData) : getColorByAvg(imgRgbaData, sizes);
+      return color;
+    }
+
+    function getColorByAvg (imgRgbaData, sizes) {
+      // 主色，平均值。将图片每一个像素点的r，g，b通道的值分别累加，然后分别用累加的r，g，b的值除以图片总像素点的个数，分别得到一个平均的r，g，b值并作为图片主色调的rgb值
+      const mainColor = {
+          r: 0,
+          g: 0,
+          b: 0
+      }
+      imgRgbaData.forEach(rgba => {
+          mainColor.r += rgba[0]
+          mainColor.g += rgba[1]
+          mainColor.b += rgba[2]
+      })
+
+      const area = sizes.width * sizes.height
+      mainColor.r = mainColor.r / area | 0
+      mainColor.g = mainColor.g / area | 0
+      mainColor.b = mainColor.b / area | 0
+
+      // 互补色，255 - 主色调。用255分别减去主色调的r，g，b的值分别得到一个新的r，g，b的值作为互补色调
+      const reverseColor = {
+          r: 255 - mainColor.r,
+          g: 255 - mainColor.g,
+          b: 255 - mainColor.b
+      }
+
+      return {
+        bgColor: `rgb(${mainColor.r}, ${mainColor.g}, ${mainColor.b})`,
+        txtColor: `rgb(${reverseColor.r}, ${reverseColor.g}, ${reverseColor.b})`
+      }
+    }
+
+
+    function getGrayColorByAvg (r, g, b) {
+      // 平均值法
+      const avg = (r + g + b) / 3
+      return avg
+    }
+
+    function getGrayColor (r, g, b) {
+      // 心理学灰度公式： Gray = R*0.299 + G*0.587 + B*0.114
+      // 考虑精度：Gray = (R*299 + G*587 + B*114) / 1000
+      // 考虑精度 + 速度：Gray = (R*38 + G*75 + B*15) >> 7
+      return (r * 38 + g * 75 + b * 15) >> 7
+    }
+
+    function get2ColorByCount (imgRgbaData) {
+      const filterData = imgRgbaData.filter(rgba => rgba.slice(0, 3).every(val => val > 0 && val < 255))
+      // 统计每一种颜色的使用次数
+      const countData = filterData.reduce((obj, rgba, index) => {
+          const key = rgba.join('|')
+          obj[key] = obj[key] ? ++(obj[key]) : 1;
+          return obj
+      }, {});
+
+      let sortData = Object.keys(countData).map(key => {
+          const rgba = key.split('|');
+          const gray = getGrayColor(rgba[0], rgba[1], rgba[2])
+          return {
+              rgba,
+              count: countData[key],
+              gray
+          }
+      })
+      sortData = sortData.sort((a, b) => b.count - a.count)
+      sortData = sortData.slice(0, 10).sort((a, b) => b.brightness - a.brightness)
+
+      const start = sortData[0].rgba
+      const end = sortData[sortData.length - 1].rgba
+
+      const rgb = [(start[0] / 2 + end[0] / 2) | 0, (start[1] / 2 + end[1] / 2) | 0, (start[2] / 2 + end[2] / 2) | 0]
+      const color = getGrayColor(rgb[0], rgb[1], rgb[2]) > 255 / 2 ? '#000' : '#fff'
+
+      return {
+        bgColor: [`rgb(${start[0]}, ${start[1]}, ${start[2]})`, `rgb(${end[0]}, ${end[1]}, ${end[2]})`],
+        txtColor: color
+      }
+    }
+  </script>
+</body>
+
+</html>

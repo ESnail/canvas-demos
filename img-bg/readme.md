@@ -6,7 +6,7 @@
 - 图像灰度处理
 - 提取图像的主题色：平均值法（单色背景）、最多色值法（双色背景）
 
-![demo](./img-bg/demo.png)
+![demo](./demo.png)
 
 [点击在线体验](https://esnail.github.io/canvas-demos/img-bg/index.html)
 

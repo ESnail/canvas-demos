@@ -6,7 +6,7 @@
 - 图像灰度处理
 - 提取图像的主题色：平均值法（单色背景）、最多色值法（双色背景）
 
-![demo]("./img-bg/demo.png")
+![demo](./img-bg/demo.png)
 
 [点击在线体验](https://esnail.github.io/canvas-demos/img-bg/index.html)
 
@@ -22,7 +22,7 @@ void ctx.drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight);
 
 参数理解：
 
-![参数理解]("./Canvas_drawimage.jpg")
+![参数理解](./Canvas_drawimage.jpg)
 
 #### 自适应水平垂直居中
 
